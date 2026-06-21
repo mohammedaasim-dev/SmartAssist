@@ -299,14 +299,9 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    // Initialize Gemini SDK with custom user-agent header as required
+    // Initialize Gemini SDK safely
     const ai = new GoogleGenAI({
       apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        }
-      }
     });
 
     // We build systemic and contextual history instructions
@@ -328,9 +323,9 @@ Instructions:
       parts: [{ text: h.text }]
     }));
 
-    // Generate output with gemini-3.5-flash
+    // Generate output with gemini-2.5-flash
     const chatResponse = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: [
         ...formattedHistory,
         { role: "user", parts: [{ text: trimmedMsg }] }
@@ -366,11 +361,6 @@ function getGeminiClient(): { ai: GoogleGenAI; isMock: boolean } {
   }
   const ai = new GoogleGenAI({
     apiKey: apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      }
-    }
   });
   return { ai, isMock: false };
 }
@@ -548,7 +538,7 @@ app.post("/api/ai/image-high-quality", async (req, res) => {
   }
 });
 
-// 3. SEARCH GROUNDING ENDPOINT using gemini-3.5-flash
+// 3. SEARCH GROUNDING ENDPOINT using gemini-2.5-flash
 app.post("/api/ai/search-grounding", async (req, res) => {
   try {
     const { prompt } = req.body;
@@ -566,7 +556,7 @@ app.post("/api/ai/search-grounding", async (req, res) => {
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }]
@@ -580,12 +570,12 @@ app.post("/api/ai/search-grounding", async (req, res) => {
 
   } catch (error: any) {
     console.error("Search Grounding error:", error);
-    const errInfo = formatGeminiError(error, "gemini-3.5-flash [Google Search Live]");
+    const errInfo = formatGeminiError(error, "gemini-2.5-flash [Google Search Live]");
     res.status(errInfo.code).json({ error: errInfo.error, isQuotaExceeded: errInfo.isQuotaExceeded });
   }
 });
 
-// 4. MAPS GROUNDING ENDPOINT using gemini-3.5-flash
+// 4. MAPS GROUNDING ENDPOINT using gemini-2.5-flash
 app.post("/api/ai/maps-grounding", async (req, res) => {
   try {
     const { prompt } = req.body;
@@ -603,7 +593,7 @@ app.post("/api/ai/maps-grounding", async (req, res) => {
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         tools: [{ googleMaps: {} }]
@@ -617,7 +607,7 @@ app.post("/api/ai/maps-grounding", async (req, res) => {
 
   } catch (error: any) {
     console.error("Maps Grounding error:", error);
-    const errInfo = formatGeminiError(error, "gemini-3.5-flash [Google Maps Live]");
+    const errInfo = formatGeminiError(error, "gemini-2.5-flash [Google Maps Live]");
     res.status(errInfo.code).json({ error: errInfo.error, isQuotaExceeded: errInfo.isQuotaExceeded });
   }
 });
