@@ -1,0 +1,6 @@
+{
+  "name": "SmartAssist AI Customer Support",
+  "description": "An AI-powered customer support chatbot with FAQ matching, Chat History, and Gemini 3.5 Fallback, designed for Shaik Mohammed Aasim.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
