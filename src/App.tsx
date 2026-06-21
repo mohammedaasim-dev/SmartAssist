@@ -18,6 +18,7 @@ import { auth, db } from "./firebase";
 import LoginScreen from "./components/LoginScreen";
 import AILaboratory from "./components/AILaboratory";
 import { TypingText } from "./components/TypingText";
+import { INITIAL_FAQS } from "./data/faqs";
 
 export default function App() {
   // Authentication status
@@ -63,7 +64,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('Home');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [homeMode, setHomeMode] = useState<'Customer_Support_Assistant' | 'FAQ' | 'AI_Responses'>('Customer_Support_Assistant');
-  const [faqs, setFaqs] = useState<FAQItem[]>([]);
+  const [faqs, setFaqs] = useState<FAQItem[]>(INITIAL_FAQS);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   
@@ -250,9 +251,13 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setFaqs(data);
+      } else {
+        console.warn("API /api/faqs returned non-OK status. Maintaining INITIAL_FAQS.");
+        setFaqs(INITIAL_FAQS);
       }
     } catch (err) {
-      console.error("Failed fetching FAQs:", err);
+      console.error("Failed fetching FAQs, maintaining INITIAL_FAQS:", err);
+      setFaqs(INITIAL_FAQS);
     }
   };
 
@@ -643,23 +648,93 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
           return s;
         }));
       } else {
+        if (res.status === 404) {
+          throw new Error("404_MOCK_FALLBACK");
+        }
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || "Server unresponsiveness.");
       }
     } catch (err: any) {
       console.error(err);
-      const botMsgError: Message = {
-        id: `msg_bot_err_${Date.now()}`,
-        text: `⚠️ Support Service Alert: ${err.message || "Failed to reach the chatbot engine."} \n\n🔒 **Pro-tip**: If live API keys are currently rate-limited or unavailable, simply switch **Simulator: ACTIVE** in the upper-right section of the header to chat with a latency-free AI assistant instantly!`,
-        sender: 'bot',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      saveSessions(chatSessions.map(s => {
-        if (s.id === currentSessionId) {
-          return { ...s, messages: [...s.messages, botMsgError] };
+      
+      // Auto-fallback check - if server returns 404 or connection is refused, auto-trigger Simulation Mode.
+      const is404 = err.message === "404_MOCK_FALLBACK" || err.message?.includes("Failed to fetch") || err.message?.includes("network") || err.message?.includes("Load failed");
+      
+      if (is404) {
+        // Auto-enable Simulation Mode to guarantee seamless operation for the user
+        setIsSimulationMode(true);
+        
+        let responseText = "";
+        const lowerText = text.toLowerCase();
+        
+        if (lowerText.includes("payment") || lowerText.includes("clear") || lowerText.includes("card")) {
+          responseText = `💳 **Payment Queries Resolution Matrix**
+Our platforms support multiple premium options for billing clearances:
+1. **Credit/Debit Cards**: Unified Visa, Mastercard, American Express, and Discover.
+2. **Digital Wallets**: Apple Pay, Google Pay, and PayPal Express checkout.
+3. **Enterprise Billing**: Invoiced bank transfers (net-30) for certified corporate agreements.
+
+For security concerns, all transactions remain 128-bit SSL encrypted.`;
+        } else if (lowerText.includes("account") || lowerText.includes("detail") || lowerText.includes("update") || lowerText.includes("profile")) {
+          responseText = `👤 **Account Records Security Panel**
+To update your personal contact, credential profile, or address details:
+1. Authenticate with your secure credentials in the **OTP login portal**.
+2. Select **Profile Settings** from the sidebar.
+3. Edit your profile name, customize your display avatar, and save your preferences securely.`;
+        } else if (lowerText.includes("who created") || lowerText.includes("developer") || lowerText.includes("creator") || lowerText.includes("shaik") || lowerText.includes("aasim")) {
+          responseText = `🌟 **About My Creator**
+I am proudly developed by **Shaik Mohammed Aasim**, a distinguished **B.Tech Computer Science Engineering (AI & ML)** student! 
+
+Shaik designed me with a sophisticated hybrid architecture:
+- **Low Latency Matcher**: Checks user inquiries against a Scikit-Learn-engineered FAQ overlap dictionary.
+- **Cognitive Fallback**: Leverages Google's **gemini-2.5-flash** to resolve unpredictable support flows.`;
+        } else {
+          responseText = `🤖 **SmartAssist AI Simulator Response** (Sandbox Mock Mode Active)
+Thank you for reaching out to customer support! Under our offline sandbox simulator protocol, we parsed your query:
+*"${text}"*
+
+**Recommendation & Next Steps:**
+- Direct support requests can resolve instantly by looking up matching criteria in our search index or switching to the **AI Labs** workspace.
+- If you have an active Gemini API Key, make sure to add it into **Settings > Secrets** to enable live Gemini-2.5 intelligence!`;
         }
-        return s;
-      }));
+
+        const botMsg: Message = {
+          id: `msg_bot_${Date.now()}`,
+          text: `⚠️ **Server connection (404/Offline) handled successfully.** Auto-activated sandbox simulator to prevent support disruption.\n\n${responseText}`,
+          sender: 'bot',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          faqMatched: false,
+          score: 100
+        };
+
+        saveSessions(chatSessions.map(s => {
+          if (s.id === currentSessionId) {
+            const nextTitle = s.messages.length <= 2 
+              ? (text.length > 25 ? `${text.substring(0, 25)}...` : text)
+              : s.title;
+
+            return {
+              ...s,
+              title: nextTitle,
+              messages: [...s.messages, botMsg]
+            };
+          }
+          return s;
+        }));
+      } else {
+        const botMsgError: Message = {
+          id: `msg_bot_err_${Date.now()}`,
+          text: `⚠️ Support Service Alert: ${err.message || "Failed to reach the chatbot engine."} \n\n🔒 **Pro-tip**: If live API keys are currently rate-limited or unavailable, simply switch **Simulator: ACTIVE** in the upper-right section of the header to chat with a latency-free AI assistant instantly!`,
+          sender: 'bot',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        saveSessions(chatSessions.map(s => {
+          if (s.id === currentSessionId) {
+            return { ...s, messages: [...s.messages, botMsgError] };
+          }
+          return s;
+        }));
+      }
     } finally {
       setLoading(false);
     }
