@@ -289,6 +289,8 @@ app.post("/api/chat", async (req, res) => {
 
     // 2. Fall back to Gemini 3.5 Flash server-side logic
     const apiKey = process.env.GEMINI_API_KEY;
+    console.log("API Key Found:", !!apiKey);
+    console.log("API Prefix:", apiKey?.substring(0, 10)); 
     if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
       // Lazy fallback support if Gemini API key is missing
       return res.json({
