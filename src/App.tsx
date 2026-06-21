@@ -9,7 +9,7 @@ import {
   Send, LogOut, CheckCircle, TrendingUp, Info, HelpCircle, 
   User, RefreshCw, ShieldCheck, BadgePercent, X, PlusCircle, Volume2,
   ChevronRight, LayoutDashboard, Users, Sliders, Download, Ticket as TicketIcon,
-  FileText, Check, Settings, AlertTriangle, Activity, Shield, Award
+  FileText, Check, Settings, AlertTriangle, Activity, Shield, Award, Menu
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Message, FAQItem, ChatSession, Ticket, UserAccount } from "./types";
@@ -60,6 +60,7 @@ export default function App() {
 
   // Expanded tabs to support User requests
   const [activeTab, setActiveTab] = useState<string>('Home');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [homeMode, setHomeMode] = useState<'Customer_Support_Assistant' | 'FAQ' | 'AI_Responses'>('Customer_Support_Assistant');
   const [faqs, setFaqs] = useState<FAQItem[]>([]);
   const [query, setQuery] = useState("");
@@ -621,10 +622,18 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-[#0D0D0E] text-[#E0E0E0] overflow-hidden font-sans">
+    <div className="flex h-screen w-full bg-[#0D0D0E] text-[#E0E0E0] overflow-hidden font-sans relative">
       
+      {/* Mobile overlay backdrop */}
+      {isMobileSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
       {/* 1. LEFT SIDEBAR PANEL */}
-      <aside className="w-80 bg-[#131316] border-r border-white/5 flex flex-col justify-between shrink-0 h-full overflow-y-auto">
+      <aside className={`fixed inset-y-0 left-0 z-40 w-80 bg-[#131316] border-r border-[#ffffff0a] flex flex-col justify-between h-full overflow-y-auto transition-transform duration-300 lg:static lg:translate-x-0 ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div>
           {/* Dashboard Title & Branding */}
           <div className="p-5 border-b border-white/5 flex items-center justify-between">
@@ -637,6 +646,15 @@ export default function App() {
                 <p className="text-[10px] uppercase tracking-widest text-[#8a8a93]">Operations Deck</p>
               </div>
             </div>
+
+            {/* Close button for mobile screen widths */}
+            <button
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="p-1.5 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-lg transition-all lg:hidden cursor-pointer"
+              title="Close navigation"
+            >
+              <X size={16} />
+            </button>
           </div>
 
           <div className="py-4 space-y-4">
@@ -647,7 +665,7 @@ export default function App() {
               
               <button
                 id="sidebar-btn-home"
-                onClick={() => setActiveTab('Home')}
+                onClick={() => { setActiveTab('Home'); setIsMobileSidebarOpen(false); }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   activeTab === 'Home'
                     ? 'bg-gradient-to-r from-indigo-500/10 to-transparent border-l-2 border-indigo-500 text-white font-semibold'
@@ -660,7 +678,7 @@ export default function App() {
 
               <button
                 id="sidebar-btn-about"
-                onClick={() => setActiveTab('About')}
+                onClick={() => { setActiveTab('About'); setIsMobileSidebarOpen(false); }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   activeTab === 'About'
                     ? 'bg-gradient-to-r from-indigo-500/10 to-transparent border-l-2 border-indigo-500 text-white font-semibold'
@@ -673,7 +691,7 @@ export default function App() {
 
               <button
                 id="sidebar-btn-profile"
-                onClick={() => setActiveTab('Profile')}
+                onClick={() => { setActiveTab('Profile'); setIsMobileSidebarOpen(false); }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   activeTab === 'Profile'
                     ? 'bg-gradient-to-r from-indigo-500/10 to-transparent border-l-2 border-indigo-500 text-white font-semibold'
@@ -686,7 +704,7 @@ export default function App() {
 
               <button
                 id="sidebar-btn-mychats"
-                onClick={() => setActiveTab('My_Chats')}
+                onClick={() => { setActiveTab('My_Chats'); setIsMobileSidebarOpen(false); }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   activeTab === 'My_Chats'
                     ? 'bg-gradient-to-r from-indigo-500/10 to-transparent border-l-2 border-indigo-500 text-white font-semibold'
@@ -706,7 +724,7 @@ export default function App() {
 
               <button
                 id="sidebar-btn-support-ticket"
-                onClick={() => setActiveTab('Support_Ticket')}
+                onClick={() => { setActiveTab('Support_Ticket'); setIsMobileSidebarOpen(false); }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   activeTab === 'Support_Ticket'
                     ? 'bg-gradient-to-r from-indigo-500/10 to-transparent border-l-2 border-indigo-500 text-white font-semibold'
@@ -761,6 +779,7 @@ export default function App() {
                     return;
                   }
                   setActiveTab('Dashboard');
+                  setIsMobileSidebarOpen(false);
                 }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   currentAccount.role !== 'Admin' ? 'opacity-40 hover:opacity-100' : ''
@@ -782,6 +801,7 @@ export default function App() {
                     return;
                   }
                   setActiveTab('Users');
+                  setIsMobileSidebarOpen(false);
                 }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   currentAccount.role !== 'Admin' ? 'opacity-40 hover:opacity-100' : ''
@@ -803,6 +823,7 @@ export default function App() {
                     return;
                   }
                   setActiveTab('Admin_Chats');
+                  setIsMobileSidebarOpen(false);
                 }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   currentAccount.role !== 'Admin' ? 'opacity-40 hover:opacity-100' : ''
@@ -824,6 +845,7 @@ export default function App() {
                     return;
                   }
                   setActiveTab('Admin_Panel');
+                  setIsMobileSidebarOpen(false);
                 }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   currentAccount.role !== 'Admin' ? 'opacity-40 hover:opacity-100' : ''
@@ -908,12 +930,21 @@ export default function App() {
       <main className="flex-1 flex flex-col bg-[#0D0D0E] h-full overflow-hidden relative">
         
         {/* Banner with logout/deploy top alignment */}
-        <header className="px-6 py-4 border-b border-white/5 bg-[#0D0D0E]/80 backdrop-blur-xl flex items-center justify-between z-10 shrink-0">
-          <div className="flex items-center space-x-3">
-            <div className="w-2.5 h-2.5 bg-green-500 rounded-full shadow-lg shadow-green-500/20 animate-pulse"></div>
-            <div>
-              <h1 className="font-serif font-bold text-base md:text-lg text-white italic tracking-tight">SmartAssist AI Customer Support</h1>
-              <p className="text-xs text-white/40 max-w-xl truncate hidden sm:block">
+        <header className="px-4 md:px-6 py-3.5 border-b border-white/5 bg-[#0D0D0E]/80 backdrop-blur-xl flex items-center justify-between z-10 shrink-0">
+          <div className="flex items-center space-x-3 min-w-0">
+            {/* Hamburger sidebar menu for small widths */}
+            <button
+              id="sidebar-toggle-mobile"
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="p-2 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-lg transition-all lg:hidden cursor-pointer shrink-0"
+              aria-label="Toggle navigation"
+            >
+              <Menu size={18} />
+            </button>
+            <div className="w-2.5 h-2.5 bg-green-500 rounded-full shadow-lg shadow-green-500/20 animate-pulse shrink-0"></div>
+            <div className="min-w-0">
+              <h1 className="font-serif font-bold text-sm md:text-lg text-white italic tracking-tight truncate">SmartAssist AI Customer Support</h1>
+              <p className="text-[10px] md:text-xs text-white/40 max-w-xl truncate hidden sm:block">
                 Sophisticated hybrid agent powered by static FAQ memory overlap and Gemini 3.5 AI fallback.
               </p>
             </div>

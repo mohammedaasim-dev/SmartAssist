@@ -8,7 +8,7 @@ import {
 } from "firebase/auth";
 import { auth, googleProvider, microsoftProvider } from "../firebase";
 import { motion, AnimatePresence } from "motion/react";
-import { Bot, Mail, Lock, User, AlertCircle, ArrowRight, Check, X, ShieldCheck, Key, RefreshCw, ArrowLeft, Send } from "lucide-react";
+import { Bot, Mail, Lock, User, AlertCircle, ArrowRight, Check, X, ShieldCheck, Key, RefreshCw, ArrowLeft, Send, HelpCircle } from "lucide-react";
 
 interface LoginScreenProps {
   onSuccess?: () => void;
@@ -29,6 +29,7 @@ export default function LoginScreen({ onSuccess }: LoginScreenProps) {
   const [otpInput, setOtpInput] = useState("");
   const [generatedOtp, setGeneratedOtp] = useState("");
   const [showOtpHint, setShowOtpHint] = useState(true);
+  const [showSsoHelp, setShowSsoHelp] = useState(false);
 
   // Validation functions
   const validatePassword = (pass: string) => {
@@ -76,6 +77,8 @@ export default function LoginScreen({ onSuccess }: LoginScreenProps) {
         return "SSO sign-in popup was closed before completion.";
       case "auth/operation-not-allowed":
         return "Email/Password sign-in is currently disabled in your Firebase Settings. To use credentials: 1) Go to your Firebase Console -> Authentication -> Sign-in method. 2) Enable the 'Email/Password' provider. Alternatively, please use 'Sign in with Google' which is supported by default.";
+      case "auth/unauthorized-domain":
+        return `Firebase: Unauthorized Domain. The current address "${window.location.hostname}" is not listed in your Firebase project. Please navigate to Firebase Console -> Authentication -> Settings -> Authorized domains, and whitelist this address to enable SSO logins!`;
       case "auth/network-request-failed":
         return "Network reference lost. Please check your internet connection.";
       default:
@@ -251,7 +254,8 @@ export default function LoginScreen({ onSuccess }: LoginScreenProps) {
     } catch (err: any) {
       console.error("Google Auth error:", err);
       const errMsg = err.code ? formatAuthError(err.code) : err.message;
-      setError(errMsg);
+      setError(`Google SSO: ${errMsg}`);
+      setShowSsoHelp(true);
     } finally {
       setLoading(false);
     }
@@ -267,7 +271,8 @@ export default function LoginScreen({ onSuccess }: LoginScreenProps) {
     } catch (err: any) {
       console.error("Microsoft Auth error:", err);
       const errMsg = err.code ? formatAuthError(err.code) : err.message;
-      setError(errMsg);
+      setError(`Microsoft SSO: ${errMsg}`);
+      setShowSsoHelp(true);
     } finally {
       setLoading(false);
     }
@@ -805,6 +810,72 @@ export default function LoginScreen({ onSuccess }: LoginScreenProps) {
               <span>Microsoft</span>
             </button>
           </div>
+
+          {/* Troubleshooter action button */}
+          <div className="mt-3.5 text-center">
+            <button
+              type="button"
+              onClick={() => setShowSsoHelp(!showSsoHelp)}
+              className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold transition-colors bg-transparent border-none p-1 cursor-pointer inline-flex items-center gap-1"
+            >
+              <HelpCircle size={12} />
+              <span>{showSsoHelp ? "Hide Auth Troubleshooter" : "SSO Login not working? Quick Fix"}</span>
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {showSsoHelp && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-3 bg-indigo-500/5 border border-indigo-500/10 rounded-xl p-4 overflow-hidden text-left"
+              >
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-indigo-300 font-mono mb-2 flex items-center gap-1.5">
+                  <ShieldCheck size={12} className="text-indigo-400" />
+                  <span>Interactive SSO Diagnostics</span>
+                </h4>
+                
+                <div className="space-y-3.5 text-xs text-white/70 leading-relaxed">
+                  <div className="space-y-1">
+                    <p className="font-semibold text-white">1. Iframe Sandbox Limitation (Most Common!)</p>
+                    <p className="text-white/50 text-[11px]">
+                      Chrome and Safari block third-party storage & cookies in sandboxed preview frames. 
+                      <span className="text-indigo-300 font-medium block mt-1">
+                        👉 Solved by clicking the "Open in new tab" icon at the top right of this preview panel to run the app directly!
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="space-y-1 border-t border-white/5 pt-2">
+                    <p className="font-semibold text-white">2. Enable Providers in Firebase Console</p>
+                    <p className="text-white/50 text-[11px]">
+                      Ensure Google/Microsoft signing is officially set to <span className="text-emerald-400">Enabled</span> in your Firebase Dashboard.
+                      <a 
+                        href="https://console.firebase.google.com/" 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="text-indigo-400 font-medium ml-1 underline hover:text-indigo-300"
+                      >
+                        Open Firebase Console
+                      </a>
+                    </p>
+                  </div>
+
+                  <div className="space-y-1 border-t border-white/5 pt-2">
+                    <p className="font-semibold text-white">3. Authorized Domain Whitelisting</p>
+                    <p className="text-white/50 text-[11px]">
+                      Your current URL hostname must be added under <strong>Authorized domains</strong> in Firebase Authentication settings:
+                    </p>
+                    <div className="bg-black/40 rounded p-2 font-mono text-[10px] text-amber-300 break-all select-all mt-1 border border-white/5 flex items-center justify-between gap-1">
+                      <span className="select-all">{window.location.hostname}</span>
+                      <span className="text-[8px] bg-amber-500/10 text-amber-400 px-1 py-0.5 rounded shrink-0 uppercase tracking-wider">Copy Address</span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Toggle link */}

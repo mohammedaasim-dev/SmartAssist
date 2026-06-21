@@ -9,8 +9,8 @@
 }
 
 html, body, #root {
-  background-color: #484884;
-  color: #7a4646;
+  background-color: #0d0e14;
+  color: #e2e8f0;
   font-family: var(--font-sans);
   height: 100%;
   margin: 0;
