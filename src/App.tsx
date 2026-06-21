@@ -16,6 +16,7 @@ import { Message, FAQItem, ChatSession, Ticket, UserAccount } from "./types";
 import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
 import { auth, db } from "./firebase";
 import LoginScreen from "./components/LoginScreen";
+import AILaboratory from "./components/AILaboratory";
 import { TypingText } from "./components/TypingText";
 
 export default function App() {
@@ -714,6 +715,19 @@ export default function App() {
                 <History size={18} className={`${activeTab === 'My_Chats' ? 'text-indigo-400' : 'text-slate-400'}`} />
                 <span>💬 My Chats</span>
               </button>
+
+              <button
+                id="sidebar-btn-ailabs"
+                onClick={() => { setActiveTab('AI_Labs'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                  activeTab === 'AI_Labs'
+                    ? 'bg-gradient-to-r from-indigo-500/10 to-transparent border-l-2 border-indigo-500 text-white font-semibold'
+                    : 'text-white/50 hover:bg-white/5 rounded-lg hover:text-white'
+                }`}
+              >
+                <Sparkles size={18} className={`${activeTab === 'AI_Labs' ? 'text-indigo-400' : 'text-slate-400'}`} />
+                <span>🧠 AI Workbench</span>
+              </button>
             </div>
 
             <div className="border-t border-white/5 mx-3"></div>
@@ -1191,6 +1205,10 @@ export default function App() {
                 </div>
               </div>
             </div>
+          )}
+
+          {activeTab === 'AI_Labs' && (
+            <AILaboratory />
           )}
 
           {/* 2. VIEW TAB: ABOUT */}
