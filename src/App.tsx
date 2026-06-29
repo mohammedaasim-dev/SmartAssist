@@ -9,7 +9,8 @@ import {
   Send, LogOut, CheckCircle, TrendingUp, Info, HelpCircle, 
   User, RefreshCw, ShieldCheck, BadgePercent, X, PlusCircle, Volume2,
   ChevronRight, LayoutDashboard, Users, Sliders, Download, Ticket as TicketIcon,
-  FileText, Check, Settings, AlertTriangle, Activity, Shield, Award, Menu
+  FileText, Check, Settings, AlertTriangle, Activity, Shield, Award, Menu,
+  Calendar, Globe, Clock, Gauge, Mic, MicOff
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Message, FAQItem, ChatSession, Ticket, UserAccount } from "./types";
@@ -19,6 +20,7 @@ import LoginScreen from "./components/LoginScreen";
 import AILaboratory from "./components/AILaboratory";
 import { TypingText } from "./components/TypingText";
 import { INITIAL_FAQS } from "./data/faqs";
+import { getSimulatedResponse } from "./data/simulatorKB";
 
 export default function App() {
   // Authentication status
@@ -67,6 +69,68 @@ export default function App() {
   const [faqs, setFaqs] = useState<FAQItem[]>(INITIAL_FAQS);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Web Speech API Voice States
+  const [isListening, setIsListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setVoiceSupported(true);
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!voiceSupported) return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+    } else {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+
+        const baseText = query;
+
+        recognition.onstart = () => {
+          setIsListening(true);
+        };
+
+        recognition.onerror = (event: any) => {
+          console.error("Speech recognition error", event.error);
+          setIsListening(false);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognition.onresult = (event: any) => {
+          let accumulatedTranscript = '';
+          for (let i = 0; i < event.results.length; ++i) {
+            accumulatedTranscript += event.results[i][0].transcript;
+          }
+          setQuery((baseText.trim() ? baseText.trim() + " " : "") + accumulatedTranscript.trim());
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+      } catch (err) {
+        console.error("Failed to start speech recognition", err);
+        setIsListening(false);
+      }
+    }
+  };
   
   // Dynamic FAQ Testing Sandbox variables
   const [sandboxText, setSandboxText] = useState("");
@@ -87,6 +151,129 @@ export default function App() {
 
   // Tone of the Assistant instruction modifier
   const [assistantTone, setAssistantTone] = useState<'friendly' | 'formal' | 'concise' | 'technical'>('friendly');
+
+  // Agent Knowledge Freshness Settings
+  const [knowledgeCutoff, setKnowledgeCutoff] = useState<'2024' | '2026' | 'none'>(() => {
+    return (localStorage.getItem('smartassist_knowledge_cutoff') as any) || 'none';
+  });
+  const [faqCutoffEnabled, setFaqCutoffEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('smartassist_faq_cutoff_enabled') === 'true';
+  });
+  const [aiCutoffEnabled, setAiCutoffEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('smartassist_ai_cutoff_enabled') !== 'false';
+  });
+
+  const handleUpdateKnowledgeCutoff = (cutoff: '2024' | '2026' | 'none') => {
+    setKnowledgeCutoff(cutoff);
+    localStorage.setItem('smartassist_knowledge_cutoff', cutoff);
+  };
+  const handleUpdateFaqCutoffEnabled = (val: boolean) => {
+    setFaqCutoffEnabled(val);
+    localStorage.setItem('smartassist_faq_cutoff_enabled', String(val));
+  };
+  const handleUpdateAiCutoffEnabled = (val: boolean) => {
+    setAiCutoffEnabled(val);
+    localStorage.setItem('smartassist_ai_cutoff_enabled', String(val));
+  };
+
+  const [isRefreshingCache, setIsRefreshingCache] = useState(false);
+  const [cacheRefreshMessage, setCacheRefreshMessage] = useState("");
+
+  const handleRefreshCache = async () => {
+    setIsRefreshingCache(true);
+    setCacheRefreshMessage("");
+    try {
+      // 1. Reset standard settings in localStorage
+      localStorage.removeItem('smartassist_knowledge_cutoff');
+      localStorage.removeItem('smartassist_faq_cutoff_enabled');
+      localStorage.removeItem('smartassist_ai_cutoff_enabled');
+      
+      // Update local state to matched defaults
+      setKnowledgeCutoff('none');
+      setFaqCutoffEnabled(false);
+      setAiCutoffEnabled(true);
+
+      // 2. Call backend to reset dynamicFaqs
+      const res = await fetch('/api/faqs/reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          // Update local state faqs list
+          setFaqs(data.faqs);
+          setCacheRefreshMessage("Cache cleared successfully! Settings re-initialized and FAQs refreshed from source.");
+        } else {
+          setCacheRefreshMessage("Settings re-initialized locally, but backend FAQ reset was incomplete.");
+        }
+      } else {
+        // Fallback refresh locally
+        setFaqs(INITIAL_FAQS);
+        setCacheRefreshMessage("Settings re-initialized locally, backend reset returned offline fallback.");
+      }
+    } catch (e: any) {
+      console.error("Refresh cache failed:", e);
+      setFaqs(INITIAL_FAQS);
+      setCacheRefreshMessage("Cache re-initialized with standard client-side defaults.");
+    } finally {
+      setIsRefreshingCache(false);
+      // Auto fade-out message after 4 seconds
+      setTimeout(() => {
+        setCacheRefreshMessage("");
+      }, 4000);
+    }
+  };
+
+  const [apiLogs, setApiLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [isClearingLogs, setIsClearingLogs] = useState(false);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
+  const fetchApiLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const res = await fetch("/api/debugger/logs");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setApiLogs(data.logs || []);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load debugger logs:", e);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  const handleClearApiLogs = async () => {
+    setIsClearingLogs(true);
+    try {
+      const res = await fetch("/api/debugger/clear", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setApiLogs([]);
+          setExpandedLogId(null);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to clear logs:", e);
+    } finally {
+      setIsClearingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'Admin_Panel') {
+      fetchApiLogs();
+      const interval = setInterval(fetchApiLogs, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab]);
 
   // Interactive Support Tickets State (seeding default tickets per user requirement)
   const [tickets, setTickets] = useState<Ticket[]>(() => {
@@ -302,22 +489,25 @@ export default function App() {
     }
   };
 
-  const saveSessions = (updated: ChatSession[]) => {
-    setChatSessions(updated);
-    localStorage.setItem('smartassist_chats', JSON.stringify(updated));
-    
-    // Auto-update message counter in profile
-    const totalMsgsCount = updated.reduce((acc, curr) => acc + curr.messages.filter(m => m.sender === 'user').length, 0);
-    const hasUser = registeredUsers.some(u => u.email === currentUser?.email);
-    if (hasUser) {
-      const updatedUsersList = registeredUsers.map(u => {
-        if (u.email === currentUser?.email) {
-          return { ...u, totalMessages: totalMsgsCount };
-        }
-        return u;
-      });
-      saveUsers(updatedUsersList);
-    }
+  const saveSessions = (updatedOrFn: ChatSession[] | ((prev: ChatSession[]) => ChatSession[])) => {
+    setChatSessions((prevSessions) => {
+      const updated = typeof updatedOrFn === 'function' ? updatedOrFn(prevSessions) : updatedOrFn;
+      localStorage.setItem('smartassist_chats', JSON.stringify(updated));
+      
+      // Auto-update message counter in profile
+      const totalMsgsCount = updated.reduce((acc, curr) => acc + curr.messages.filter(m => m.sender === 'user').length, 0);
+      const hasUser = registeredUsers.some(u => u.email === currentUser?.email);
+      if (hasUser) {
+        const updatedUsersList = registeredUsers.map(u => {
+          if (u.email === currentUser?.email) {
+            return { ...u, totalMessages: totalMsgsCount };
+          }
+          return u;
+        });
+        saveUsers(updatedUsersList);
+      }
+      return updated;
+    });
   };
 
   const saveTickets = (updated: Ticket[]) => {
@@ -416,7 +606,7 @@ export default function App() {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
     
-    saveSessions(chatSessions.map(s => {
+    saveSessions(prev => prev.map(s => {
       if (s.id === currentSessionId) {
         return {
           ...s,
@@ -510,6 +700,13 @@ export default function App() {
     const text = (textToSend || query).trim();
     if (!text) return;
 
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+    }
+
     if (!textToSend) {
       setQuery("");
     }
@@ -545,39 +742,7 @@ export default function App() {
 
     if (isSimulationMode) {
       setTimeout(() => {
-        let responseText = "";
-        const lowerText = text.toLowerCase();
-        
-        if (lowerText.includes("payment") || lowerText.includes("clear") || lowerText.includes("card")) {
-          responseText = `💳 **Payment Queries Resolution Matrix (SIMULATED)**
-Our platforms support multiple premium options for billing clearances:
-1. **Credit/Debit Cards**: Unified Visa, Mastercard, American Express, and Discover.
-2. **Digital Wallets**: Apple Pay, Google Pay, and PayPal Express checkout.
-3. **Enterprise Billing**: Invoiced bank transfers (net-30) for certified corporate agreements.
-
-For security concerns, all transactions remain 128-bit SSL encrypted.`;
-        } else if (lowerText.includes("account") || lowerText.includes("detail") || lowerText.includes("update") || lowerText.includes("profile")) {
-          responseText = `👤 **Account Records Security Panel (SIMULATED)**
-To update your personal contact, credential profile, or address details:
-1. Authenticate with your secure credentials in the **OTP login portal**.
-2. Select **Profile Settings** from the sidebar.
-3. Edit your profile name, customize your display avatar, and save your preferences securely.`;
-        } else if (lowerText.includes("who created") || lowerText.includes("developer") || lowerText.includes("creator") || lowerText.includes("shaik") || lowerText.includes("aasim")) {
-          responseText = `🌟 **About My Creator (SIMULATED)**
-I am proudly developed by **Shaik Mohammed Aasim**, a distinguished **B.Tech Computer Science Engineering (AI & ML)** student! 
-
-Shaik designed me with a sophisticated hybrid architecture:
-- **Low Latency Matcher**: Checks user inquiries against a Scikit-Learn-engineered FAQ overlap dictionary.
-- **Cognitive Fallback**: Leverages Google's **gemini-2.5-flash** to resolve unpredictable support flows.`;
-        } else {
-          responseText = `🤖 **SmartAssist AI Simulator Response** (Sandbox Mock Mode Active)
-Thank you for reaching out to customer support! Under our offline sandbox simulator protocol, we parsed your query:
-*"${text}"*
-
-**Recommendation & Next Steps:**
-- Direct support requests can resolve instantly by looking up matching criteria in our search index or switching to the **AI Labs** workspace.
-- If you have an active Gemini API Key, make sure to add it into **Settings > Secrets** to enable live Gemini-2.5 intelligence!`;
-        }
+        const responseText = getSimulatedResponse(text, knowledgeCutoff);
 
         const botMsg: Message = {
           id: `msg_bot_${Date.now()}`,
@@ -585,10 +750,11 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
           sender: 'bot',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           faqMatched: false,
-          score: 100
+          score: 100,
+          modelSource: 'simulator'
         };
 
-        saveSessions(chatSessions.map(s => {
+        saveSessions(prev => prev.map(s => {
           if (s.id === currentSessionId) {
             const nextTitle = s.messages.length <= 2 
               ? (text.length > 25 ? `${text.substring(0, 25)}...` : text)
@@ -615,7 +781,10 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
           message: text,
           mode: currentSess?.mode || 'Customer_Support_Assistant',
           history: apiHistory,
-          tone: assistantTone
+          tone: assistantTone,
+          knowledgeCutoff,
+          faqCutoffEnabled,
+          aiCutoffEnabled
         })
       });
 
@@ -629,10 +798,11 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           faqMatched: responseData.faqMatched,
           matchedFaqQuestion: responseData.matchedFaqQuestion,
-          score: responseData.score
+          score: responseData.score,
+          modelSource: responseData.modelSource || 'simulator'
         };
 
-        saveSessions(chatSessions.map(s => {
+        saveSessions(prev => prev.map(s => {
           if (s.id === currentSessionId) {
             // Update title based on the first real question if title was generic
             const nextTitle = s.messages.length <= 2 
@@ -655,86 +825,57 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
         throw new Error(errorData.error || "Server unresponsiveness.");
       }
     } catch (err: any) {
-      console.error(err);
-      
-      // Auto-fallback check - if server returns 404 or connection is refused, auto-trigger Simulation Mode.
-      const is404 = err.message === "404_MOCK_FALLBACK" || err.message?.includes("Failed to fetch") || err.message?.includes("network") || err.message?.includes("Load failed");
-      
-      if (is404) {
-        // Auto-enable Simulation Mode to guarantee seamless operation for the user
-        setIsSimulationMode(true);
-        
-        let responseText = "";
-        const lowerText = text.toLowerCase();
-        
-        if (lowerText.includes("payment") || lowerText.includes("clear") || lowerText.includes("card")) {
-          responseText = `💳 **Payment Queries Resolution Matrix**
-Our platforms support multiple premium options for billing clearances:
-1. **Credit/Debit Cards**: Unified Visa, Mastercard, American Express, and Discover.
-2. **Digital Wallets**: Apple Pay, Google Pay, and PayPal Express checkout.
-3. **Enterprise Billing**: Invoiced bank transfers (net-30) for certified corporate agreements.
-
-For security concerns, all transactions remain 128-bit SSL encrypted.`;
-        } else if (lowerText.includes("account") || lowerText.includes("detail") || lowerText.includes("update") || lowerText.includes("profile")) {
-          responseText = `👤 **Account Records Security Panel**
-To update your personal contact, credential profile, or address details:
-1. Authenticate with your secure credentials in the **OTP login portal**.
-2. Select **Profile Settings** from the sidebar.
-3. Edit your profile name, customize your display avatar, and save your preferences securely.`;
-        } else if (lowerText.includes("who created") || lowerText.includes("developer") || lowerText.includes("creator") || lowerText.includes("shaik") || lowerText.includes("aasim")) {
-          responseText = `🌟 **About My Creator**
-I am proudly developed by **Shaik Mohammed Aasim**, a distinguished **B.Tech Computer Science Engineering (AI & ML)** student! 
-
-Shaik designed me with a sophisticated hybrid architecture:
-- **Low Latency Matcher**: Checks user inquiries against a Scikit-Learn-engineered FAQ overlap dictionary.
-- **Cognitive Fallback**: Leverages Google's **gemini-2.5-flash** to resolve unpredictable support flows.`;
-        } else {
-          responseText = `🤖 **SmartAssist AI Simulator Response** (Sandbox Mock Mode Active)
-Thank you for reaching out to customer support! Under our offline sandbox simulator protocol, we parsed your query:
-*"${text}"*
-
-**Recommendation & Next Steps:**
-- Direct support requests can resolve instantly by looking up matching criteria in our search index or switching to the **AI Labs** workspace.
-- If you have an active Gemini API Key, make sure to add it into **Settings > Secrets** to enable live Gemini-2.5 intelligence!`;
-        }
-
-        const botMsg: Message = {
-          id: `msg_bot_${Date.now()}`,
-          text: `⚠️ **Server connection (404/Offline) handled successfully.** Auto-activated sandbox simulator to prevent support disruption.\n\n${responseText}`,
-          sender: 'bot',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          faqMatched: false,
-          score: 100
-        };
-
-        saveSessions(chatSessions.map(s => {
-          if (s.id === currentSessionId) {
-            const nextTitle = s.messages.length <= 2 
-              ? (text.length > 25 ? `${text.substring(0, 25)}...` : text)
-              : s.title;
-
-            return {
-              ...s,
-              title: nextTitle,
-              messages: [...s.messages, botMsg]
-            };
-          }
-          return s;
-        }));
+      const errMsg = (err.message || "").toLowerCase();
+      // 1. Detect rate limit, quota exceeded, and API unavailable errors.
+      const isQuotaOrLimit = errMsg.includes("quota exceeded") || 
+                             errMsg.includes("quota") ||
+                             errMsg.includes("resource_exhausted") || 
+                             errMsg.includes("limit") || 
+                             errMsg.includes("429");
+      if (isQuotaOrLimit) {
+        console.warn("Client handled chat limit gracefully:", err.message);
       } else {
-        const botMsgError: Message = {
-          id: `msg_bot_err_${Date.now()}`,
-          text: `⚠️ Support Service Alert: ${err.message || "Failed to reach the chatbot engine."} \n\n🔒 **Pro-tip**: If live API keys are currently rate-limited or unavailable, simply switch **Simulator: ACTIVE** in the upper-right section of the header to chat with a latency-free AI assistant instantly!`,
-          sender: 'bot',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-        saveSessions(chatSessions.map(s => {
-          if (s.id === currentSessionId) {
-            return { ...s, messages: [...s.messages, botMsgError] };
-          }
-          return s;
-        }));
+        console.error("Client caught chat error:", err);
       }
+                             
+      const isUnavailable = errMsg.includes("unavailable") || 
+                            errMsg.includes("forbidden") || 
+                            errMsg.includes("api key not valid") ||
+                            errMsg.includes("503");
+
+      const is404 = errMsg === "404_mock_fallback" || 
+                    errMsg.includes("failed to fetch") || 
+                    errMsg.includes("network") || 
+                    errMsg.includes("load failed");
+      
+      // Automatically switch to simulated mode on any network or API error/limit
+      setIsSimulationMode(true);
+      const responseText = getSimulatedResponse(text, knowledgeCutoff);
+
+      const botMsg: Message = {
+        id: `msg_bot_${Date.now()}`,
+        text: responseText,
+        sender: 'bot',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        faqMatched: false,
+        score: 100,
+        modelSource: 'simulator'
+      };
+
+      saveSessions(prev => prev.map(s => {
+        if (s.id === currentSessionId) {
+          const nextTitle = s.messages.length <= 2 
+            ? (text.length > 25 ? `${text.substring(0, 25)}...` : text)
+            : s.title;
+
+          return {
+            ...s,
+            title: nextTitle,
+            messages: [...s.messages, botMsg]
+          };
+        }
+        return s;
+      }));
     } finally {
       setLoading(false);
     }
@@ -1124,11 +1265,19 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
 
         {/* Tab Selection Area Container */}
         <div className="flex-1 overflow-y-auto flex flex-col">
+          <AnimatePresence mode="wait">
 
           {/* TAB CONTENT: ACTIVE CONVERSATIONS (SUPPORT & DIRECT AI MODES) */}
           {/* 1. VIEW TAB: HOME */}
           {activeTab === 'Home' && (
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <motion.div
+              key="Home"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex-1 flex flex-col overflow-hidden"
+            >
               
               {/* Dynamic Branding Header in conversation section */}
               <div className="p-6 bg-[#131316]/50 border-b border-white/5 text-center shrink-0">
@@ -1160,6 +1309,20 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                   >
                     <span className={`w-1.5 h-1.5 rounded-full ${isSimulationMode ? "bg-emerald-400 animate-pulse" : "bg-white/30"}`} />
                     <span>Simulator: {isSimulationMode ? "ACTIVE (LOCAL)" : "OFF (LIVE)"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cutoffs: ('2024' | '2026' | 'none')[] = ['none', '2024', '2026'];
+                      const nextIndex = (cutoffs.indexOf(knowledgeCutoff) + 1) % cutoffs.length;
+                      handleUpdateKnowledgeCutoff(cutoffs[nextIndex]);
+                    }}
+                    className="px-3.5 py-1.5 bg-[#1a1a20] border border-white/10 hover:border-indigo-500/30 text-white/70 hover:text-white rounded-full flex items-center space-x-1.5 text-xs font-mono transition-all cursor-pointer shadow-inner"
+                    title="Click to toggle active Knowledge Cutoff Date"
+                  >
+                    <Calendar size={12} className="text-indigo-400 shrink-0" />
+                    <span>Cutoff: <strong className="text-indigo-400">{knowledgeCutoff === 'none' ? 'None (Fresh)' : knowledgeCutoff}</strong></span>
                   </button>
                 </div>
 
@@ -1199,14 +1362,28 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                       animate={{ opacity: 1, y: 0 }}
                       className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div className={`max-w-[85%] md:max-w-[70%] rounded-2xl p-4 shadow-md ${
+                      <div className={`max-w-[85%] md:max-w-[70%] rounded-2xl p-4 shadow-md transition-all duration-300 ${
                         msg.sender === 'user'
                           ? 'bg-indigo-600 text-white rounded-br-none'
-                          : 'bg-[#131316] text-[#E0E0E0] border border-white/5 rounded-bl-none'
+                          : msg.modelSource === 'gemini'
+                            ? 'bg-gradient-to-br from-[#161622] to-[#111115] text-[#E0E0E0] border border-indigo-500/25 rounded-bl-none shadow-[0_0_15px_-3px_rgba(99,102,241,0.15)]'
+                            : 'bg-[#131316] text-[#E0E0E0] border border-white/5 rounded-bl-none'
                       }`}>
                         
                         <div className="flex items-center justify-between text-[10px] font-mono text-white/40 mb-1.5 pb-1 border-b border-white/5">
-                          <span>{msg.sender === 'user' ? 'YOU USER clearance' : '🤖 SMARTASSIST AI'}</span>
+                          {msg.sender === 'user' ? (
+                            <span>YOU USER clearance</span>
+                          ) : msg.modelSource === 'gemini' ? (
+                            <span className="flex items-center gap-1.5 text-indigo-300 font-bold select-none">
+                              <Sparkles size={11} className="text-indigo-400 animate-pulse shrink-0" />
+                              <span>GEMINI 3.5 FLASH • SMARTASSIST AI</span>
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-white/45 font-semibold select-none">
+                              <Bot size={11} className="text-white/40 shrink-0" />
+                              <span>LOCAL SIMULATOR • SMARTASSIST AI</span>
+                            </span>
+                          )}
                           <span>{msg.timestamp}</span>
                         </div>
 
@@ -1224,14 +1401,25 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                         </p>
 
                         <div className="mt-2.5 flex items-center justify-between pt-1.5 border-t border-white/5 text-[10px]">
-                          <button
-                            onClick={() => speakSynthesis(msg.text)}
-                            className="text-white/40 hover:text-indigo-400 transition-colors flex items-center gap-1 cursor-pointer font-mono"
-                            title="Hear reading aloud"
-                          >
-                            <Volume2 size={12} />
-                            <span>Listen Speech</span>
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => speakSynthesis(msg.text)}
+                              className="text-white/40 hover:text-indigo-400 transition-colors flex items-center gap-1 cursor-pointer font-mono"
+                              title="Hear reading aloud"
+                            >
+                              <Volume2 size={12} />
+                              <span>Listen Speech</span>
+                            </button>
+                            {msg.sender === 'bot' && (
+                              <span className={`px-1.5 py-0.5 rounded-[4px] font-bold text-[8px] font-mono select-none uppercase tracking-wider ${
+                                msg.modelSource === 'gemini' 
+                                  ? 'bg-indigo-500/10 text-indigo-300 border border-indigo-500/20' 
+                                  : 'bg-white/5 text-white/50 border border-white/10'
+                              }`}>
+                                {msg.modelSource === 'gemini' ? '✨ API Live' : '💻 Sim Mode'}
+                              </span>
+                            )}
+                          </div>
 
                           {msg.faqMatched && (
                             <span className="text-[10px] bg-indigo-500/10 text-indigo-400 font-bold px-1.5 py-0.5 rounded border border-indigo-500/20 font-mono">
@@ -1317,9 +1505,28 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                           ? "Consult Gemini 3.5 Assistant directly about any general concern..."
                           : "How may I support your system registration or operations today?"
                       }
-                      className="w-full bg-[#16161A] border border-white/10 text-white rounded-xl pl-4 pr-12 py-3.5 text-sm placeholder-white/20 focus:outline-none focus:border-indigo-500 hover:border-white/20 transition-all font-sans"
+                      className={`w-full bg-[#16161A] border border-white/10 text-white rounded-xl pl-4 py-3.5 text-sm placeholder-white/20 focus:outline-none focus:border-indigo-500 hover:border-white/20 transition-all font-sans ${voiceSupported ? 'pr-24' : 'pr-12'}`}
                     />
                     
+                    {voiceSupported && (
+                      <button
+                        type="button"
+                        onClick={toggleListening}
+                        className={`absolute right-14 p-1.5 rounded-lg transition-all flex items-center justify-center cursor-pointer ${
+                          isListening
+                            ? "bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse"
+                            : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
+                        }`}
+                        title={isListening ? "Listening... click to stop" : "Speak query (Voice-to-Text)"}
+                      >
+                        {isListening ? (
+                          <MicOff size={16} className="text-red-400" />
+                        ) : (
+                          <Mic size={16} />
+                        )}
+                      </button>
+                    )}
+
                     <button
                       type="submit"
                       disabled={loading || !query.trim()}
@@ -1357,16 +1564,32 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
 
           {activeTab === 'AI_Labs' && (
-            <AILaboratory />
+            <motion.div
+              key="AI_Labs"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex-1 flex flex-col"
+            >
+              <AILaboratory />
+            </motion.div>
           )}
 
           {/* 2. VIEW TAB: ABOUT */}
           {activeTab === 'About' && (
-            <div className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]">
+            <motion.div
+              key="About"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]"
+            >
               <div className="border-b border-white/10 pb-4">
                 <h2 className="text-2xl font-serif font-bold text-indigo-400 italic flex items-center gap-2">
                   <Info size={24} />
@@ -1432,12 +1655,19 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                   <span className="px-2.5 py-1 bg-white/5 rounded border border-white/10 font-bold">Vite Bundler</span>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* 3. VIEW TAB: PROFILE */}
           {activeTab === 'Profile' && (
-            <div className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]">
+            <motion.div
+              key="Profile"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]"
+            >
               <div className="border-b border-white/10 pb-4">
                 <h2 className="text-xl font-serif font-bold text-white italic flex items-center gap-2">
                   <User size={22} className="text-indigo-400" />
@@ -1658,12 +1888,19 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                 </div>
 
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* 4. VIEW TAB: MY CHATS */}
           {activeTab === 'My_Chats' && (
-            <div className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]">
+            <motion.div
+              key="My_Chats"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]"
+            >
               <div className="flex items-center justify-between border-b border-white/10 pb-4">
                 <div>
                   <h2 className="text-xl font-serif font-bold text-white italic flex items-center gap-2.5">
@@ -1774,12 +2011,19 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                   ))}
                 </div>
               )}
-            </div>
+            </motion.div>
           )}
 
           {/* 5. VIEW TAB: SUPPORT TICKET */}
           {activeTab === 'Support_Ticket' && (
-            <div className="p-6 max-w-5xl mx-auto space-y-6 w-full text-[#E0E0E0]">
+            <motion.div
+              key="Support_Ticket"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="p-6 max-w-5xl mx-auto space-y-6 w-full text-[#E0E0E0]"
+            >
               <div className="border-b border-white/10 pb-4">
                 <h2 className="text-xl font-serif font-bold text-white italic flex items-center gap-2">
                   <TicketIcon size={22} className="text-indigo-400" />
@@ -1937,12 +2181,19 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                 </div>
 
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* 6. VIEW TAB: DASHBOARD (ADMIN-ONLY) */}
           {activeTab === 'Dashboard' && (
-            <div className="p-6 max-w-5xl mx-auto space-y-6 w-full text-[#E0E0E0]">
+            <motion.div
+              key="Dashboard"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="p-6 max-w-5xl mx-auto space-y-6 w-full text-[#E0E0E0]"
+            >
               <div className="border-[#2c2c35] border-b pb-4">
                 <h2 className="text-xl font-serif font-bold text-white italic flex items-center gap-2">
                   <LayoutDashboard size={22} className="text-indigo-400" />
@@ -2059,12 +2310,19 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* 7. VIEW TAB: USERS (ADMIN-ONLY) */}
           {activeTab === 'Users' && (
-            <div className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]">
+            <motion.div
+              key="Users"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]"
+            >
               <div className="border-[#2c2c35] border-b pb-4">
                 <h2 className="text-xl font-serif font-bold text-white italic flex items-center gap-2">
                   <Users size={22} className="text-indigo-400" />
@@ -2134,12 +2392,19 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                   </tbody>
                 </table>
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* 8. VIEW TAB: ADMIN CHATS PREVIEWS */}
           {activeTab === 'Admin_Chats' && (
-            <div className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]">
+            <motion.div
+              key="Admin_Chats"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]"
+            >
               <div className="border-[#2c2c35] border-b pb-4">
                 <span className="text-[10px] uppercase font-bold text-indigo-400 font-mono tracking-wider block mb-1">Audit Control Panel</span>
                 <h2 className="text-xl font-serif font-bold text-white italic flex items-center gap-2">
@@ -2231,12 +2496,19 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
 
                 </div>
               )}
-            </div>
+            </motion.div>
           )}
 
           {/* 9. VIEW TAB: ADMIN PANEL (strict FAQ configurations sandbox previously under activeTab === 'FAQ') */}
           {activeTab === 'Admin_Panel' && (
-            <div className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]">
+            <motion.div
+              key="Admin_Panel"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="p-6 max-w-4xl mx-auto space-y-6 w-full text-[#E0E0E0]"
+            >
               
               <div className="border-[#2c2c35] border-b pb-4">
                 <span className="text-[10px] uppercase font-bold text-[#8a8a93] font-mono tracking-wider block mb-1">Operations Console Lvl 3</span>
@@ -2247,6 +2519,197 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                 <p className="text-xs text-white/40 mt-1">
                   Inject new response coordinates, regulate similarity overlap index, or clean up registry entries.
                 </p>
+              </div>
+
+              {/* Agent Knowledge Settings Widget */}
+              <div className="p-6 bg-[#131316] border border-white/5 rounded-2xl space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-white/5 pb-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Settings size={16} className="text-indigo-400" />
+                      <span>Agent Knowledge Settings (Response Freshness Control)</span>
+                    </h3>
+                    <p className="text-xs text-white/40">
+                      Regulate the active knowledge cutoff date and define severity levels for both FAQ matching and direct Gemini modes.
+                    </p>
+                  </div>
+                  <div className="flex flex-row sm:flex-col items-start sm:items-end gap-2 shrink-0">
+                    <span className="self-start sm:self-auto px-2.5 py-0.5 bg-indigo-500/10 border border-indigo-500/25 rounded-full text-[10px] font-mono text-indigo-300 font-bold uppercase tracking-wider whitespace-nowrap">
+                      Knowledge Control
+                    </span>
+                    <button
+                      id="refresh-cache-btn"
+                      type="button"
+                      onClick={handleRefreshCache}
+                      disabled={isRefreshingCache}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/5 border border-white/10 hover:border-indigo-500/40 hover:bg-indigo-500/5 text-xs font-semibold text-indigo-300 rounded-lg transition-all cursor-pointer disabled:opacity-50 select-none shadow-sm"
+                    >
+                      <RefreshCw size={12} className={`text-indigo-400 ${isRefreshingCache ? 'animate-spin' : ''}`} />
+                      <span>{isRefreshingCache ? 'Refreshing...' : 'Refresh Cache'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {cacheRefreshMessage && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs rounded-xl flex items-center gap-2.5 animate-pulse">
+                    <CheckCircle size={15} className="shrink-0 text-emerald-400" />
+                    <span>{cacheRefreshMessage}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Left Column: Cutoff selectors */}
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-mono text-white/50 block">Select Knowledge Cutoff Date</label>
+                        <div id="cutoff-sync-status" className="flex items-center gap-1.5 text-[10px] font-mono select-none">
+                          {isRefreshingCache ? (
+                            <>
+                              <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-ping" />
+                              <span className="text-indigo-300 font-semibold animate-pulse">Syncing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                              <span className="text-emerald-400 font-semibold">Up to Date</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 p-1 bg-[#16161A] border border-white/5 rounded-xl">
+                        <button
+                          onClick={() => handleUpdateKnowledgeCutoff('2024')}
+                          className={`py-2 text-xs font-mono rounded-lg transition-all cursor-pointer ${
+                            knowledgeCutoff === '2024'
+                              ? 'bg-indigo-500 text-slate-950 font-bold shadow'
+                              : 'text-white/60 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          Strict 2024
+                        </button>
+                        <button
+                          onClick={() => handleUpdateKnowledgeCutoff('2026')}
+                          className={`py-2 text-xs font-mono rounded-lg transition-all cursor-pointer ${
+                            knowledgeCutoff === '2026'
+                              ? 'bg-indigo-500 text-slate-950 font-bold shadow'
+                              : 'text-white/60 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          Modern 2026
+                        </button>
+                        <button
+                          onClick={() => handleUpdateKnowledgeCutoff('none')}
+                          className={`py-2 text-xs font-mono rounded-lg transition-all cursor-pointer ${
+                            knowledgeCutoff === 'none'
+                              ? 'bg-indigo-500 text-slate-950 font-bold shadow'
+                              : 'text-white/60 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          No Cutoff
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick Slider control for custom preview experience */}
+                    <div className="space-y-2 bg-[#16161A]/40 p-3.5 border border-white/5 rounded-xl">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-mono text-white/40">Adjust Cutoff Threshold</span>
+                        <span className="font-bold font-mono text-indigo-400">
+                          {knowledgeCutoff === 'none' ? 'Fresh / Indefinite' : `Year ${knowledgeCutoff}`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="2020"
+                        max="2027"
+                        value={knowledgeCutoff === 'none' ? 2027 : parseInt(knowledgeCutoff, 10)}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (val === 2027) {
+                            handleUpdateKnowledgeCutoff('none');
+                          } else if (val >= 2026) {
+                            handleUpdateKnowledgeCutoff('2026');
+                          } else {
+                            handleUpdateKnowledgeCutoff('2024');
+                          }
+                        }}
+                        className="w-full accent-indigo-500 bg-white/10 h-1 rounded-lg cursor-pointer"
+                      />
+                      <div className="flex items-center justify-between font-mono text-[9px] text-white/30 px-1">
+                        <span>2020</span>
+                        <span>2024 (Strict)</span>
+                        <span>2026 (Modern)</span>
+                        <span>Indefinite</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Mode Switches */}
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      <span className="text-[10px] uppercase font-bold text-white/30 font-mono tracking-wider block">Scope Configurations</span>
+                      
+                      {/* Direct AI Mode Restriction */}
+                      <div className="flex items-start gap-3 p-3 bg-[#16161A]/40 border border-white/5 rounded-xl">
+                        <div className="pt-0.5">
+                          <input
+                            type="checkbox"
+                            id="aiCutoffEnabled"
+                            checked={aiCutoffEnabled}
+                            onChange={(e) => handleUpdateAiCutoffEnabled(e.target.checked)}
+                            className="w-4 h-4 rounded border-white/10 bg-[#16161A] text-indigo-500 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                          />
+                        </div>
+                        <label htmlFor="aiCutoffEnabled" className="space-y-0.5 cursor-pointer">
+                          <span className="text-xs font-semibold text-white block">Restrict Direct AI (Gemini Mode)</span>
+                          <span className="text-[10px] text-white/40 block leading-snug">
+                            Applies instructions to system prompts limiting replies to information on or prior to the cutoff date.
+                          </span>
+                        </label>
+                      </div>
+
+                      {/* FAQ Mode Restriction */}
+                      <div className="flex items-start gap-3 p-3 bg-[#16161A]/40 border border-white/5 rounded-xl">
+                        <div className="pt-0.5">
+                          <input
+                            type="checkbox"
+                            id="faqCutoffEnabled"
+                            checked={faqCutoffEnabled}
+                            onChange={(e) => handleUpdateFaqCutoffEnabled(e.target.checked)}
+                            className="w-4 h-4 rounded border-white/10 bg-[#16161A] text-indigo-500 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                          />
+                        </div>
+                        <label htmlFor="faqCutoffEnabled" className="space-y-0.5 cursor-pointer">
+                          <span className="text-xs font-semibold text-white block">Filter FAQ Exact Match Results</span>
+                          <span className="text-[10px] text-white/40 block leading-snug">
+                            Blocks or alerts users if matched FAQ answers reference years or information past the cutoff setting.
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Notice Indicator */}
+                <div className="p-3 bg-indigo-500/5 border border-indigo-500/10 rounded-xl flex items-center gap-3">
+                  <Globe size={18} className="text-indigo-400 shrink-0" />
+                  <div className="text-xs leading-snug text-white/70">
+                    {knowledgeCutoff === 'none' ? (
+                      <p>
+                        <strong>Fresh Mode Active (Recommended)</strong>: The virtual agent operates with no cutoff restrictions. Customer answers benefit from the absolute latest updates and live parameters.
+                      </p>
+                    ) : knowledgeCutoff === '2026' ? (
+                      <p>
+                        <strong>2026 Cutoff Active</strong>: The client-side simulator and live server are restricted to standard 2026 knowledge. Future-dating queries (2027+) will trigger standard warnings.
+                      </p>
+                    ) : (
+                      <p>
+                        <strong>Strict 2024 Cutoff Active</strong>: Standard backward-compatibility mode is enforced. The agent acts on 2024 intelligence. Post-2024 questions will receive structured suggestions to switch to live mode or enable search.
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Duplicate original sandbox variables form strictly to preserve previous grading logic */}
@@ -2434,9 +2897,394 @@ Thank you for reaching out to customer support! Under our offline sandbox simula
                 )}
               </div>
 
-            </div>
+              {/* API Debugger Section */}
+              <div className="p-6 bg-[#131316] border border-white/5 rounded-2xl space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+                  <div className="space-y-1">
+                    <span className="text-[9px] uppercase font-bold text-indigo-400 font-mono tracking-wider block">Diagnostics Deck</span>
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Activity size={16} className="text-indigo-400" />
+                      <span>API Debugger (Real-Time Gemini Request & Response Logs)</span>
+                    </h3>
+                    <p className="text-xs text-white/40">
+                      View raw JSON payloads sent to Gemini and classifier decisions to audit exactly what the assistant receives, including rules and dynamic FAQs.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={fetchApiLogs}
+                      disabled={isLoadingLogs}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/5 border border-white/10 hover:border-indigo-500/40 hover:bg-indigo-500/5 text-xs font-semibold text-indigo-300 rounded-lg transition-all cursor-pointer disabled:opacity-50 select-none shadow-sm"
+                      title="Fetch latest API raw logs from server"
+                    >
+                      <RefreshCw size={12} className={`text-indigo-400 ${isLoadingLogs ? 'animate-spin' : ''}`} />
+                      <span>Refresh</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearApiLogs}
+                      disabled={isClearingLogs || apiLogs.length === 0}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/5 border border-white/10 hover:border-red-500/40 hover:bg-red-500/5 text-xs font-semibold text-red-300 rounded-lg transition-all cursor-pointer disabled:opacity-50 select-none shadow-sm"
+                      title="Clear all stored logs from memory"
+                    >
+                      <Trash2 size={12} className="text-red-400" />
+                      <span>Clear Logs</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Gemini API Latency Performance Gauge */}
+                {(() => {
+                  const geminiLogs = apiLogs
+                    .filter((log: any) => log.endpoint?.includes("Gemini API") || log.endpoint?.includes("API Exception") || log.model?.toLowerCase().includes("gemini"))
+                    .slice(0, 10);
+
+                  const latencyValues = geminiLogs
+                    .map((log: any) => log.response?.durationMs)
+                    .filter((ms): ms is number => typeof ms === "number" && ms > 0);
+
+                  const hasLatencyData = latencyValues.length > 0;
+                  const avgLatency = hasLatencyData ? Math.round(latencyValues.reduce((a, b) => a + b, 0) / latencyValues.length) : 0;
+                  const maxLatency = hasLatencyData ? Math.max(...latencyValues) : 0;
+                  const minLatency = hasLatencyData ? Math.min(...latencyValues) : 0;
+
+                  // Let's calculate nice color classes and labels
+                  let speedLabel = "NO DATA";
+                  let speedColor = "text-white/40";
+                  let speedBg = "bg-white/5";
+                  let speedBorder = "border-white/10";
+                  let speedIndicatorColor = "#4B5563"; // gray
+
+                  if (hasLatencyData) {
+                    if (avgLatency < 1200) {
+                      speedLabel = "EXCELLENT / OPTIMIZED";
+                      speedColor = "text-emerald-400";
+                      speedBg = "bg-emerald-500/5";
+                      speedBorder = "border-emerald-500/20";
+                      speedIndicatorColor = "#10B981"; // emerald-500
+                    } else if (avgLatency <= 2500) {
+                      speedLabel = "HEALTHY / STABLE";
+                      speedColor = "text-indigo-300";
+                      speedBg = "bg-indigo-500/5";
+                      speedBorder = "border-indigo-500/20";
+                      speedIndicatorColor = "#6366F1"; // indigo-500
+                    } else if (avgLatency <= 4500) {
+                      speedLabel = "MODERATE LOAD";
+                      speedColor = "text-amber-400";
+                      speedBg = "bg-amber-500/5";
+                      speedBorder = "border-amber-500/20";
+                      speedIndicatorColor = "#F59E0B"; // amber-500
+                    } else {
+                      speedLabel = "DELAYED / CONTEXT DENSE";
+                      speedColor = "text-rose-400";
+                      speedBg = "bg-rose-500/5";
+                      speedBorder = "border-rose-500/20";
+                      speedIndicatorColor = "#EF4444"; // rose-500
+                    }
+                  }
+
+                  const maxDialMs = 5000; // scale is 5 seconds
+                  const percentage = Math.min(100, Math.max(0, (avgLatency / maxDialMs) * 100));
+
+                  const radius = 32;
+                  const circumference = 2 * Math.PI * radius;
+                  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+
+                  return (
+                    <div id="gemini-latency-gauge" className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-[#18181b]/60 border border-white/5 rounded-xl">
+                      {/* Col 1: Average Speed Dial */}
+                      <div className="flex items-center gap-4 bg-[#141416] p-4 rounded-lg border border-white/5">
+                        <div className="relative w-20 h-20 shrink-0 flex items-center justify-center">
+                          <svg className="w-full h-full transform -rotate-90">
+                            <circle
+                              cx="40"
+                              cy="40"
+                              r={radius}
+                              className="stroke-white/5 fill-none"
+                              strokeWidth="6"
+                            />
+                            {hasLatencyData && (
+                              <circle
+                                cx="40"
+                                cy="40"
+                                r={radius}
+                                className="fill-none transition-all duration-1000 ease-out"
+                                stroke={speedIndicatorColor}
+                                strokeWidth="6"
+                                strokeDasharray={circumference}
+                                strokeDashoffset={strokeDashoffset}
+                                strokeLinecap="round"
+                              />
+                            )}
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                            {hasLatencyData ? (
+                              <>
+                                <span className="text-sm font-extrabold font-mono text-white leading-none">
+                                  {(avgLatency / 1000).toFixed(2)}s
+                                </span>
+                                <span className="text-[9px] font-mono text-white/40 mt-0.5">avg</span>
+                              </>
+                            ) : (
+                              <span className="text-xs font-mono text-white/30">N/A</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-white/40 font-mono tracking-wider block">Latency Status</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full border ${speedBg} ${speedBorder} ${speedColor}`}>
+                              {speedLabel}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-white/40 block leading-relaxed font-sans mt-1">
+                            {hasLatencyData 
+                              ? `${latencyValues.length} recorded queries in sequence.` 
+                              : "No Gemini operations logged yet."
+                            }
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Col 2: High/Low Ranges & Explanation */}
+                      <div className="flex flex-col justify-between bg-[#141416] p-4 rounded-lg border border-white/5">
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-white/40 font-mono tracking-wider block">Operational Range</span>
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <div className="bg-white/5 p-2 rounded border border-white/5 flex flex-col">
+                              <span className="text-[9px] font-mono text-white/40">Minimum Line</span>
+                              <span className="text-xs font-bold font-mono text-emerald-400">
+                                {hasLatencyData ? `${minLatency} ms` : "---"}
+                              </span>
+                            </div>
+                            <div className="bg-white/5 p-2 rounded border border-white/5 flex flex-col">
+                              <span className="text-[9px] font-mono text-white/40">Peak Boundary</span>
+                              <span className="text-xs font-bold font-mono text-rose-400">
+                                {hasLatencyData ? `${maxLatency} ms` : "---"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-white/30 pt-2 border-t border-white/5 flex items-center gap-1">
+                          <Clock size={10} className="text-indigo-400 shrink-0" />
+                          <span>Real-time roundtrip timing including server pipeline.</span>
+                        </div>
+                      </div>
+
+                      {/* Col 3: Last 10 Queries Visual Latency Bars */}
+                      <div className="bg-[#141416] p-4 rounded-lg border border-white/5 flex flex-col justify-between">
+                        <div className="space-y-1.5 overflow-hidden">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] uppercase font-bold text-white/40 font-mono tracking-wider block">Sequence Progress (Last 10)</span>
+                            <span className="text-[9px] font-mono text-indigo-400 font-semibold">{geminiLogs.length} reqs</span>
+                          </div>
+                          
+                          {geminiLogs.length === 0 ? (
+                            <div className="py-3 text-center border border-dashed border-white/5 rounded text-white/20 text-[10px]">
+                              Waiting for active AI queries...
+                            </div>
+                          ) : (
+                            <div className="space-y-1 max-h-[80px] overflow-y-auto pr-1 select-none">
+                              {geminiLogs.map((log: any, idx: number) => {
+                                const duration = log.response?.durationMs || 0;
+                                let barColor = "bg-emerald-500/80";
+                                if (duration >= 2500) barColor = "bg-rose-500/80";
+                                else if (duration >= 1200) barColor = "bg-indigo-500/80";
+
+                                const maxVal = Math.max(2000, maxLatency);
+                                const barWidth = Math.min(100, Math.max(10, (duration / maxVal) * 100));
+
+                                return (
+                                  <div key={log.id || idx} className="group relative flex items-center gap-1.5 text-[9px] font-mono py-0.5">
+                                    <span className="text-white/30 shrink-0 w-3">#{geminiLogs.length - idx}</span>
+                                    <div className="flex-1 h-3.5 bg-white/5 rounded overflow-hidden relative border border-white/5">
+                                      <div 
+                                        className={`absolute left-0 top-0 bottom-0 ${barColor} transition-all duration-500`}
+                                        style={{ width: `${barWidth}%` }}
+                                      />
+                                      <span className="absolute right-1 top-0 bottom-0 flex items-center text-[8px] font-bold text-white z-10 leading-none">
+                                        {duration} ms
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-[9px] text-white/35 pt-1.5 flex items-center justify-between font-mono pt-1.5 border-t border-white/5 mt-1">
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> &lt;1.2s Fast
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> 1.2s-2.5s Stable
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> &gt;2.5s Dense
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {apiLogs.length === 0 ? (
+                  <div className="py-8 text-center bg-[#131316]/50 rounded-xl border border-dashed border-white/5 space-y-2">
+                    <p className="text-xs text-white/40">No API request logs recorded in this session yet.</p>
+                    <p className="text-[11px] text-white/30 max-w-sm mx-auto leading-relaxed">
+                      Send a new question under the <strong>💬 Chatbot</strong> tab or trigger strict FAQ overrides to generate real-time debugger logs.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {apiLogs.map((log) => {
+                      const isExpanded = expandedLogId === log.id;
+                      const hasError = !log.response || log.response.success === false;
+                      const isMock = log.response?.isMock;
+
+                      return (
+                        <div
+                          key={log.id}
+                          className={`bg-[#17171a] border ${
+                            hasError ? 'border-red-500/20 hover:border-red-500/30' : 'border-white/5 hover:border-white/10'
+                          } rounded-xl overflow-hidden transition-all`}
+                        >
+                          <div
+                            onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                            className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none hover:bg-white/5 transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                hasError ? 'bg-red-500 animate-pulse' : isMock ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                              }`} />
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-mono font-bold text-white tracking-wide">
+                                    {log.endpoint}
+                                  </span>
+                                  <span className="px-2 py-0.5 bg-white/5 text-[9px] font-mono text-white/60 rounded border border-white/5 uppercase">
+                                    {log.model}
+                                  </span>
+                                  {isMock && (
+                                    <span className="px-1.5 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[8px] font-mono rounded font-bold uppercase">
+                                      Sandbox Mock
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-white/30 block mt-1 font-mono">{log.timestamp}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 self-end sm:self-auto">
+                              <span className="text-xs font-mono text-white/40">
+                                {log.response?.durationMs ? `${log.response.durationMs}ms` : 'local'}
+                              </span>
+                              <span className="text-xs text-indigo-400 font-mono flex items-center gap-1">
+                                <span>{isExpanded ? 'Collapse' : 'Inspect'}</span>
+                                <ChevronRight size={12} className={`transition-transform duration-200 transform ${isExpanded ? 'rotate-90' : ''}`} />
+                              </span>
+                            </div>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="border-t border-white/5 p-4 bg-[#141416]/90 space-y-4 text-xs font-mono">
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div className="space-y-1.5 overflow-hidden">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] uppercase font-bold text-indigo-300 font-mono">
+                                      📥 Raw Input Payload
+                                    </span>
+                                    <span className="text-[10px] text-white/30">Request Context</span>
+                                  </div>
+                                  <div className="bg-[#0b0b0d] p-3 rounded-lg border border-white/5 max-h-[350px] overflow-y-auto text-white/70 whitespace-pre-wrap leading-relaxed text-[11px] select-text">
+                                    {log.request ? (
+                                      <>
+                                        {log.request.systemInstruction && (
+                                          <div className="mb-2">
+                                            <span className="text-indigo-400 font-semibold block mb-0.5">[System Instructions]</span>
+                                            <span className="text-white/60">{log.request.systemInstruction}</span>
+                                          </div>
+                                        )}
+                                        {log.request.prompt && (
+                                          <div className="mb-2">
+                                            <span className="text-emerald-400 font-semibold block mb-0.5">[User Query Prompt]</span>
+                                            <span className="text-white/85">{log.request.prompt}</span>
+                                          </div>
+                                        )}
+                                        {log.request.history && log.request.history.length > 0 && (
+                                          <div>
+                                            <span className="text-purple-400 font-semibold block mb-0.5">[Conversation History ({log.request.historyCount})]</span>
+                                            <div className="space-y-1.5 pl-2 border-l border-white/10 mt-1">
+                                              {log.request.history.map((h: any, idx: number) => (
+                                                <div key={idx} className="text-[10px] leading-relaxed">
+                                                  <strong className={h.role === 'user' ? 'text-indigo-300/80' : 'text-emerald-300/80'}>
+                                                    {h.role === 'user' ? 'User' : 'Model'}:
+                                                  </strong>{" "}
+                                                  <span className="text-white/55 font-sans">
+                                                    {h.parts?.[0]?.text || h.text || JSON.stringify(h)}
+                                                  </span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                        {!log.request.systemInstruction && !log.request.prompt && (
+                                          <pre className="text-white/50 text-[10px]">
+                                            {JSON.stringify(log.request, null, 2)}
+                                          </pre>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span className="text-white/30">No payload parameters tracked.</span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1.5 overflow-hidden">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] uppercase font-bold text-indigo-300 font-mono">
+                                      📤 Raw Output Payload
+                                    </span>
+                                    <span className="text-[10px] text-white/30 font-mono">Response Body</span>
+                                  </div>
+                                  <div className="bg-[#0b0b0d] p-3 rounded-lg border border-white/5 max-h-[350px] overflow-y-auto whitespace-pre-wrap leading-relaxed text-[11px] select-text">
+                                    {hasError ? (
+                                      <div className="text-red-400 font-semibold">
+                                        <div className="flex items-center gap-1.5 mb-1 text-red-500 font-bold">
+                                          <AlertTriangle size={12} className="shrink-0" />
+                                          <span>Gemini API / System Exception:</span>
+                                        </div>
+                                        <span className="font-sans leading-relaxed text-red-300">{log.response?.error || 'Unknown server error happened.'}</span>
+                                        {log.response?.details && (
+                                          <div className="mt-2 text-white/50 text-[10px] font-normal pl-2 border-l border-red-500/25">
+                                            {log.response.details}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="text-white/80">
+                                        <span className="text-indigo-400 font-semibold block mb-0.5">[Answer response]</span>
+                                        <span className="font-sans block leading-relaxed">{log.response?.text || JSON.stringify(log.response, null, 2)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+            </motion.div>
           )}
 
+          </AnimatePresence>
         </div>
 
       </main>

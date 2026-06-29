@@ -11,6 +11,7 @@ export interface Message {
   faqMatched?: boolean;
   matchedFaqQuestion?: string;
   score?: number;
+  modelSource?: 'gemini' | 'simulator';
 }
 
 export interface FAQItem {

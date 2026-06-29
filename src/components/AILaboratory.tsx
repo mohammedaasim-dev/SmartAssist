@@ -4,6 +4,7 @@ import {
   MessageSquare, Upload, Trash2, Send, Cpu, Eye, Zap, 
   ChevronRight, RefreshCw, Layers, ShieldCheck, Check, Sliders
 } from "lucide-react";
+import { getSimulatedResponse } from "../data/simulatorKB";
 
 interface AILaboratoryProps {
   onSuccess?: () => void;
@@ -123,15 +124,8 @@ export default function AILaboratory({ onSuccess }: AILaboratoryProps) {
 
     if (isSimulationMode) {
       setTimeout(() => {
-        let simulatedText = "";
-        const roleLower = systemInstruction.toLowerCase();
-        if (roleLower.includes("cyber security")) {
-          simulatedText = `[SECURE COGNITION TERMINAL - SIMULATED AUDIT]\n\nAUDIT LOG:\n- Query: "${currentQuery}"\n- Status: SAFE / RECONSTRUCTED INTERFACE ACTIVE\n- Analysis: Under offline simulation protocol, we have verified that this route behaves correctly. Sanitizing memory buffers and authorizing local key variables. Ensure no secret API credentials are run in browser client spaces. Security bounds verified successfully with zero packet loss.`;
-        } else if (roleLower.includes("copywriter") || roleLower.includes("empathetic")) {
-          simulatedText = `Hey there! 🌟 I've analyzed your question "${currentQuery}" and built this cute reply! Everything is working beautifully and we are absolutely thrilled to guide you through the AI Laboratory workbench! Let's build something awesome together! ❤️`;
-        } else {
-          simulatedText = `[SIMULATION WORKSPACE ACTIVE]\n\nUnder active Standard Specialist settings, we successfully processed your query: "${currentQuery}".\n\nThe intelligence sandbox model is fully operational. When live API quotas are available, this route automatically proxies through high-efficiency Gemini server models. Ready for your next command!`;
-        }
+        const activeCutoff = localStorage.getItem('smartassist_knowledge_cutoff') || 'none';
+        const simulatedText = getSimulatedResponse(currentQuery, activeCutoff);
 
         const botMsg: ChatMessage = {
           id: `bot_${Date.now()}`,
@@ -182,10 +176,31 @@ export default function AILaboratory({ onSuccess }: AILaboratoryProps) {
       };
       setChatHistory((prev) => [...prev, botMsg]);
     } catch (err: any) {
-      console.error(err);
-      setErrorString(err.message || String(err));
-      if (err.message?.includes("Limit exceeded") || err.message?.includes("Quota")) {
+      const isQuota = err.message?.toLowerCase().includes("limit") || 
+                      err.message?.toLowerCase().includes("quota") || 
+                      err.message?.toLowerCase().includes("resource_exhausted") || 
+                      err.message?.toLowerCase().includes("429");
+      if (isQuota) {
+        console.warn("[Quota Handled] Switched laboratory chat to Simulation Mode:", err.message);
+      } else {
+        console.error(err);
+      }
+      if (isQuota) {
         setShowQuotaWarning(true);
+        setIsSimulationMode(true);
+        const activeCutoff = localStorage.getItem('smartassist_knowledge_cutoff') || 'none';
+        const simulatedText = getSimulatedResponse(currentQuery, activeCutoff);
+
+        const botMsg: ChatMessage = {
+          id: `bot_${Date.now()}`,
+          sender: "bot",
+          text: `[API Quota Exceeded - Switched to Simulation Mode]\n\n${simulatedText}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          modelName: "gemini-3.5-flash [Simulated]"
+        };
+        setChatHistory((prev) => [...prev, botMsg]);
+      } else {
+        setErrorString(err.message || String(err));
       }
     } finally {
       setLoading(false);
@@ -205,7 +220,7 @@ export default function AILaboratory({ onSuccess }: AILaboratoryProps) {
       setTimeout(() => {
         setThinkingOutput(`[COGNITIVE REASONING MATRIX SECURE NODE - SIMULATED RESOLUTION]
 Executing Depth Sequence Level: HIGH
-Core Model targeted: gemini-2.5-flash
+Core Model targeted: gemini-3.1-pro-preview
 
 STEP 1: OBJECTIVE DECONSTRUCTION
 Analyzing parameters of requested query:
@@ -273,10 +288,36 @@ STEP 4: ROBUSTNESS & SECURITY COMPLIANCE
       }
       setThinkingOutput(data.response);
     } catch (err: any) {
-      console.error(err);
-      setErrorString(err.message || String(err));
-      if (err.message?.includes("Limit exceeded") || err.message?.includes("Quota")) {
+      const isQuota = err.message?.toLowerCase().includes("limit") || 
+                      err.message?.toLowerCase().includes("quota") || 
+                      err.message?.toLowerCase().includes("resource_exhausted") || 
+                      err.message?.toLowerCase().includes("429");
+      if (isQuota) {
+        console.warn("[Quota Handled] Switched thinking to Simulation Mode:", err.message);
+      } else {
+        console.error(err);
+      }
+      if (isQuota) {
         setShowQuotaWarning(true);
+        setIsSimulationMode(true);
+        setThinkingOutput(`[API Quota Exceeded - Switched to Simulation Mode]
+
+[COGNITIVE REASONING MATRIX SECURE NODE - SIMULATED RESOLUTION]
+Executing Depth Sequence Level: HIGH
+Core Model targeted: gemini-3.1-pro-preview
+
+STEP 1: OBJECTIVE DECONSTRUCTION
+Analyzing parameters of requested query:
+"${thinkingPrompt}"
+
+STEP 2: RETRIEVE CORRELATION PATTERNS
+- Scanned index tags for query matching nodes.
+- Simulating highly complex sequence paths for logical planning.
+
+STEP 3: SYNTHESIZING RESOLUTION PROTOCOLS
+Resolved prompt parameters successfully within our localized simulation stack. Operations are fully continuous under the rate shielding backup structure.`);
+      } else {
+        setErrorString(err.message || String(err));
       }
     } finally {
       setLoading(false);
@@ -346,10 +387,35 @@ SUMMARY: The media file loads flawlessly within the viewer space, and the pipeli
       }
       setMultimodalOutput(data.response);
     } catch (err: any) {
-      console.error(err);
-      setErrorString(err.message || String(err));
-      if (err.message?.includes("Limit exceeded") || err.message?.includes("Quota")) {
+      const isQuota = err.message?.toLowerCase().includes("limit") || 
+                      err.message?.toLowerCase().includes("quota") || 
+                      err.message?.toLowerCase().includes("resource_exhausted") || 
+                      err.message?.toLowerCase().includes("429");
+      if (isQuota) {
+        console.warn("[Quota Handled] Switched multimodal to Simulation Mode:", err.message);
+      } else {
+        console.error(err);
+      }
+      if (isQuota) {
         setShowQuotaWarning(true);
+        setIsSimulationMode(true);
+        setMultimodalOutput(`[API Quota Exceeded - Switched to Simulation Mode]
+
+[MULTIMODAL INTELLIGENCE RADAR - SIMULATED RESULTS]
+Analyzed File: ${uploadedFileName || (isVideo ? "operations_footage.mp4" : "mainframe.jpg")}
+Asset Mime-Type: ${uploadedMime || (isVideo ? "video/mp4" : "image/jpeg")}
+Sensing Protocol: OFFLINE DEMO SANDBOX
+
+ANALYTICAL PROMPT DIRECTIVE:
+"${multimodalPrompt || "Describe uploaded media asset layout."}"
+
+VISUAL STAGE GRAPH ANALYSIS:
+1. Canvas Boundaries: Measured at 1920x1080 resolution, satisfying aspect checks.
+2. Grid Layout & Density: Elements display a high-contrast elegant structural flow with comfortable negative spacing. No visual overflows or overlapping elements observed.
+
+SUMMARY: The media file loads flawlessly within the viewer space, and the pipeline models correct parsing logic.`);
+      } else {
+        setErrorString(err.message || String(err));
       }
     } finally {
       setLoading(false);
@@ -422,10 +488,50 @@ SIGHTS AND PLACES MATCHED:
       }
       setGroundingOutput(data.response);
     } catch (err: any) {
-      console.error(err);
-      setErrorString(err.message || String(err));
-      if (err.message?.includes("Limit exceeded") || err.message?.includes("Quota")) {
+      const isQuota = err.message?.toLowerCase().includes("limit") || 
+                      err.message?.toLowerCase().includes("quota") || 
+                      err.message?.toLowerCase().includes("resource_exhausted") || 
+                      err.message?.toLowerCase().includes("429");
+      if (isQuota) {
+        console.warn("[Quota Handled] Switched grounding to Simulation Mode:", err.message);
+      } else {
+        console.error(err);
+      }
+      if (isQuota) {
         setShowQuotaWarning(true);
+        setIsSimulationMode(true);
+        if (groundingMode === "search") {
+          setGroundingOutput(`[API Quota Exceeded - Switched to Simulation Mode]
+
+[GOOGLE LIVE SEARCH GROUNDING - SIMULATED RESPONSE]
+Query parameter: "${groundingQuery}"
+Index node checked: live_knowledge_graph_v2026
+
+RETRIEVED DATA AND METADATA BULLETINS:
+- Verified latest 2026 releases: Development frameworks show beautiful, robust updates regarding Vite, TypeScript Native type stripping, and high strength layouts.
+- Quota Rate Shielding: Shared environments benefit from custom Client-Side Simulated switches that preserve operational continuity when Google Free tier counts exceed limits.
+
+SUMMARY OF RETRIEVED SOURCES:
+- Source 1: Official Developers Portal — "Harnessing Gemini 3.5 live search grounding with high fidelity callbacks."
+- Source 2: Technical Specs Hub — "Custom body parser expansion up to 50MB matches base64 graphic pipelines perfectly."`);
+        } else {
+          setGroundingOutput(`[API Quota Exceeded - Switched to Simulation Mode]
+
+[GOOGLE MAPS GEOGRAPHIC GROUNDING - SIMULATED NAVIGATION]
+Query location: "${groundingQuery}"
+Coordinate output: Lat 37.4275° N, Lon 122.1697° W (Palo Alto, California region)
+
+OPTIMIZED ROUTING ANALYSIS:
+- Traffic Status: Light density on native express links.
+- Selected Optimal Route: Stanford Avenue and El Camino Real detour corridors.
+- Estimated Trip duration: ~18 minutes with real-time transit updates active.
+
+SIGHTS AND PLACES MATCHED:
+- Destination: Code Artisan Workspace Café (Rated 4.9 🌟)
+- Features: Ergonomic standing-desk structures, persistent fiber uplinks, cozy aesthetic ambient lamps, and premium filter drippers.`);
+        }
+      } else {
+        setErrorString(err.message || String(err));
       }
     } finally {
       setLoading(false);
@@ -491,10 +597,29 @@ SIGHTS AND PLACES MATCHED:
       const imageUrl = `data:${data.mimeType};base64,${data.base64}`;
       setImageryOutputUrl(imageUrl);
     } catch (err: any) {
-      console.error(err);
-      setErrorString(err.message || String(err));
-      if (err.message?.includes("Limit exceeded") || err.message?.includes("Quota")) {
+      const isQuota = err.message?.toLowerCase().includes("limit") || 
+                      err.message?.toLowerCase().includes("quota") || 
+                      err.message?.toLowerCase().includes("resource_exhausted") || 
+                      err.message?.toLowerCase().includes("429");
+      if (isQuota) {
+        console.warn("[Quota Handled] Switched design assets compiler to Simulation Mode:", err.message);
+      } else {
+        console.error(err);
+      }
+      if (isQuota) {
         setShowQuotaWarning(true);
+        setIsSimulationMode(true);
+        // CURATED ABSTRACT HIGH-FIDELITY DESIGN ASSETS FROM UNSPLASH
+        const designUrls = [
+          "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800",
+          "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&q=80&w=800",
+          "https://images.unsplash.com/photo-1614064641938-3bbee52942c7?auto=format&fit=crop&q=80&w=800",
+          "https://images.unsplash.com/photo-1541701494587-cb58502866ab?auto=format&fit=crop&q=80&w=800"
+        ];
+        const idx = imageryPrompt.length % designUrls.length;
+        setImageryOutputUrl(designUrls[idx]);
+      } else {
+        setErrorString(err.message || String(err));
       }
     } finally {
       setLoading(false);
@@ -739,7 +864,7 @@ SIGHTS AND PLACES MATCHED:
                 <p className="text-[10px] text-white/30 italic">
                   {chatModel === "fast" && "👉 Executes 'gemini-3.1-flash-lite' for instant sub-second query loops."}
                   {chatModel === "general" && "👉 Executes 'gemini-3.5-flash' for balanced customer support responses."}
-                  {chatModel === "complex" && "👉 Executes 'gemini-2.5-flash' for heavy coding & technical audits."}
+                  {chatModel === "complex" && "👉 Executes 'gemini-3.1-pro-preview' for heavy coding & technical audits."}
                 </p>
               </div>
             </div>
@@ -819,7 +944,7 @@ SIGHTS AND PLACES MATCHED:
                 <span>Deep Reasoner & High Thinking Space</span>
               </h3>
               <p className="text-xs text-white/40 leading-relaxed max-w-3xl">
-                By setting the premium <strong>gemini-2.5-flash</strong> core, 
+                By setting the premium <strong>gemini-3.1-pro-preview</strong> core, 
                 the model is empowered to analyze coding paradigms, security gaps, and mathematical puzzles. Note: we explicitly omit any maxOutputTokens parameter to guarantee reasoning completion!
               </p>
             </div>
@@ -841,7 +966,7 @@ SIGHTS AND PLACES MATCHED:
 
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-purple-400 font-mono bg-purple-500/5 px-2 py-0.5 rounded border border-purple-500/10">
-                    Model: gemini-2.5-flash
+                    Model: gemini-3.1-pro-preview
                   </span>
                   <button
                     type="submit"
@@ -908,7 +1033,7 @@ SIGHTS AND PLACES MATCHED:
                 <span>Multimodal Image & Video Intel Analyzer</span>
               </h3>
               <p className="text-xs text-white/40 leading-relaxed">
-                Empower your Operations workspace with deep frame-by-frame analysis using the robust <strong>gemini-2.5-flash</strong> model. 
+                Empower your Operations workspace with deep frame-by-frame analysis using the robust <strong>gemini-3.5-flash</strong> model. 
                 Upload JPEG/PNG images or MP4 recordings to describe contents, extract text, or audit interface diagrams instantly.
               </p>
             </div>
